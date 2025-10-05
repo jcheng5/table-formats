@@ -48,6 +48,8 @@ def run_evaluations(
     limit: int | None,
     log_root: Path | None,
     extra_args: Iterable[str],
+    num_records: int | None,
+    num_questions: int | None,
 ) -> None:
     inspect_bin = resolve_inspect_bin()
 
@@ -66,6 +68,11 @@ def run_evaluations(
                 log_dir = log_root / model_label / fmt
                 log_dir.mkdir(parents=True, exist_ok=True)
                 cmd.extend(["--log-dir", str(log_dir)])
+
+            if num_records is not None:
+                cmd.extend(["-T", f"num_records={num_records}"])
+            if num_questions is not None:
+                cmd.extend(["-T", f"num_questions={num_questions}"])
 
             cmd.extend(extra_args)
 
@@ -100,6 +107,18 @@ def main() -> None:
         help="Optional cap on the number of samples to run for quick smoke tests",
     )
     parser.add_argument(
+        "--num-records",
+        type=int,
+        default=None,
+        help="Override the number of records included in each dataset (Inspect task arg)",
+    )
+    parser.add_argument(
+        "--num-questions",
+        type=int,
+        default=None,
+        help="Override the number of questions asked per task (Inspect task arg)",
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=Path("inspect-logs"),
@@ -130,6 +149,8 @@ def main() -> None:
         limit=args.limit,
         log_root=log_root,
         extra_args=args.inspect_args,
+        num_records=args.num_records,
+        num_questions=args.num_questions,
     )
 
 

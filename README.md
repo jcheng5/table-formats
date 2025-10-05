@@ -33,6 +33,11 @@ Run an individual evaluation directly with Inspect (example uses OpenAI's `gpt-4
 inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
   --model openai/gpt-4.1-mini \
   --log-dir logs/gpt-4.1-mini/markdown-kv
+
+# Tweak dataset size if needed (example: 200 records)
+inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
+  --model openai/gpt-4.1-mini \
+  -T num_records=200
 ```
 
 Use `--limit 25` for a quick smoke test before running the full 1,000 samples.
@@ -46,6 +51,7 @@ python scripts/run_benchmarks.py \
   --models openai/gpt-4.1-mini openai/gpt-4.1-nano \
   --formats markdown_kv markdown_table json csv \
   --limit 200 \
+  --num-records 200 \
   --inspect-args --display plain
 ```
 

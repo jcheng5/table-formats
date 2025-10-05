@@ -6,7 +6,7 @@ import random
 import string
 from io import StringIO
 from textwrap import dedent
-from typing import Callable, Dict, List, Sequence, TypedDict, NamedTuple
+from typing import Callable, Dict, List, Sequence, TypedDict, NamedTuple, Tuple
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
@@ -14,8 +14,8 @@ from inspect_ai.scorer import match
 from inspect_ai.solver import generate, system_message
 
 
-NUM_RECORDS = 1000
-NUM_QUESTIONS = 1000
+DEFAULT_NUM_RECORDS = 1000
+DEFAULT_NUM_QUESTIONS = 1000
 RECORD_SEED = 202310
 QUESTION_SEED = 424242
 
@@ -339,10 +339,10 @@ FORMAT_ORDER = [
     "natural_language",
 ]
 
-RECORDS = generate_employee_records(NUM_RECORDS, RECORD_SEED)
-QUESTIONS = generate_questions(RECORDS, NUM_QUESTIONS, QUESTION_SEED)
-FORMATTED_DATA = {key: FORMAT_SPECS[key].formatter(RECORDS) for key in FORMAT_ORDER}
-SAMPLES_CACHE: Dict[str, List[Sample]] = {}
+RECORDS_CACHE: Dict[int, List[EmployeeRecord]] = {}
+QUESTIONS_CACHE: Dict[Tuple[int, int], List[QAEntry]] = {}
+FORMATTED_CACHE: Dict[Tuple[str, int], str] = {}
+SAMPLES_CACHE: Dict[Tuple[str, int, int], List[Sample]] = {}
 
 SYSTEM_PROMPT = dedent(
     """
@@ -356,19 +356,47 @@ SYSTEM_PROMPT = dedent(
 SCORER = match(location="exact", ignore_case=False, numeric=True)
 
 
-def build_samples(format_key: str) -> List[Sample]:
-    if format_key in SAMPLES_CACHE:
-        return SAMPLES_CACHE[format_key]
+def get_records(num_records: int) -> List[EmployeeRecord]:
+    if num_records <= 0:
+        raise ValueError("num_records must be greater than zero")
+    if num_records not in RECORDS_CACHE:
+        RECORDS_CACHE[num_records] = generate_employee_records(num_records, RECORD_SEED)
+    return RECORDS_CACHE[num_records]
+
+
+def get_questions(num_records: int, num_questions: int) -> List[QAEntry]:
+    if num_questions <= 0:
+        raise ValueError("num_questions must be greater than zero")
+    key = (num_records, num_questions)
+    if key not in QUESTIONS_CACHE:
+        records = get_records(num_records)
+        QUESTIONS_CACHE[key] = generate_questions(records, num_questions, QUESTION_SEED)
+    return QUESTIONS_CACHE[key]
+
+
+def get_formatted_data(format_key: str, num_records: int) -> str:
+    key = (format_key, num_records)
+    if key not in FORMATTED_CACHE:
+        records = get_records(num_records)
+        FORMATTED_CACHE[key] = FORMAT_SPECS[format_key].formatter(records)
+    return FORMATTED_CACHE[key]
+
+
+def build_samples(format_key: str, num_records: int, num_questions: int) -> List[Sample]:
+    cache_key = (format_key, num_records, num_questions)
+    if cache_key in SAMPLES_CACHE:
+        return SAMPLES_CACHE[cache_key]
 
     if format_key not in FORMAT_SPECS:
         raise KeyError(f"Unknown format: {format_key}")
 
     spec = FORMAT_SPECS[format_key]
-    dataset_block = FORMATTED_DATA[format_key]
+    dataset_block = get_formatted_data(format_key, num_records)
+    questions = get_questions(num_records, num_questions)
 
     intro = dedent(
         f"""
-        You are provided with {NUM_RECORDS} employee records formatted as {spec.label}.
+        You are provided with {num_records} employee records formatted as {spec.label}.
         Each record includes the fields: id, name, age, city, department, salary, years_experience, project_count.
         Use the data to answer the question.
         DATA START
@@ -378,7 +406,7 @@ def build_samples(format_key: str) -> List[Sample]:
     outro = "DATA END"
 
     samples: List[Sample] = []
-    for idx, qa in enumerate(QUESTIONS):
+    for idx, qa in enumerate(questions):
         prompt = (
             f"{intro}\n\n{dataset_block}\n{outro}\n\n"
             f"Question: {qa['question']}\n"
@@ -395,72 +423,119 @@ def build_samples(format_key: str) -> List[Sample]:
                     "record_id": qa["record_id"],
                     "field": qa["field"],
                     "question": qa["question"],
+                    "num_records": num_records,
+                    "num_questions": num_questions,
                 },
             )
         )
 
-    SAMPLES_CACHE[format_key] = samples
+    SAMPLES_CACHE[cache_key] = samples
     return samples
 
 
-def create_task(format_key: str) -> Task:
+def create_task(
+    format_key: str,
+    *,
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    samples = build_samples(format_key, num_records, num_questions)
     return Task(
-        dataset=build_samples(format_key),
+        dataset=samples,
         solver=[system_message(SYSTEM_PROMPT), generate(cache=True)],
         scorer=SCORER,
     )
 
 
 @task
-def table_formats_json() -> Task:
-    return create_task("json")
+def table_formats_json(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("json", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_csv() -> Task:
-    return create_task("csv")
+def table_formats_csv(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("csv", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_xml() -> Task:
-    return create_task("xml")
+def table_formats_xml(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("xml", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_yaml() -> Task:
-    return create_task("yaml")
+def table_formats_yaml(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("yaml", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_html() -> Task:
-    return create_task("html")
+def table_formats_html(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("html", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_markdown_table() -> Task:
-    return create_task("markdown_table")
+def table_formats_markdown_table(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task(
+        "markdown_table", num_records=num_records, num_questions=num_questions
+    )
 
 
 @task
-def table_formats_markdown_kv() -> Task:
-    return create_task("markdown_kv")
+def table_formats_markdown_kv(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("markdown_kv", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_ini() -> Task:
-    return create_task("ini")
+def table_formats_ini(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("ini", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_pipe_delimited() -> Task:
-    return create_task("pipe_delimited")
+def table_formats_pipe_delimited(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task(
+        "pipe_delimited", num_records=num_records, num_questions=num_questions
+    )
 
 
 @task
-def table_formats_jsonl() -> Task:
-    return create_task("jsonl")
+def table_formats_jsonl(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task("jsonl", num_records=num_records, num_questions=num_questions)
 
 
 @task
-def table_formats_natural_language() -> Task:
-    return create_task("natural_language")
+def table_formats_natural_language(
+    num_records: int = DEFAULT_NUM_RECORDS,
+    num_questions: int = DEFAULT_NUM_QUESTIONS,
+) -> Task:
+    return create_task(
+        "natural_language", num_records=num_records, num_questions=num_questions
+    )
