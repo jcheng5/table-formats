@@ -10,32 +10,32 @@ Recreates the "Which Table Format Do LLMs Understand Best?" blog experiment usin
 
 ## Prerequisites
 
-Create/activate the existing virtual environment and load API credentials:
+Using [uv](https://docs.astral.sh/uv/):
 
 ```bash
-source .venv/bin/activate
-set -a && source .env && set +a
+# Install dependencies based on pyproject + uv.lock
+uv sync
+
+# Run Inspect directly via uv (no manual venv activation needed)
+uv run inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
+  --model openai/gpt-4.1-mini \
+  --limit 25
+
+# Call the helper script the same way
+uv run python scripts/run_benchmarks.py --models openai/gpt-4.1-mini --limit 50
 ```
-
-Verify that Inspect is available:
-
-```bash
-inspect --version
-```
-
-If that command is not on your `PATH`, use `INSPECT_BIN=.venv/bin/inspect` when running the helper script.
 
 ## Running a single format/model
 
 Run an individual evaluation directly with Inspect (example uses OpenAI's `gpt-4.1-mini`):
 
 ```bash
-inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
+uv run inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
   --model openai/gpt-4.1-mini \
   --log-dir logs/gpt-4.1-mini/markdown-kv
 
 # Tweak dataset size if needed (example: 200 records)
-inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
+uv run inspect eval evals/table_formats_eval.py@table_formats_markdown_kv \
   --model openai/gpt-4.1-mini \
   -T num_records=200
 ```
@@ -47,7 +47,7 @@ Use `--limit 25` for a quick smoke test before running the full 1,000 samples.
 The helper script executes all (or a chosen subset of) formats across one or more models:
 
 ```bash
-python scripts/run_benchmarks.py \
+uv run python scripts/run_benchmarks.py \
   --models openai/gpt-4.1-mini openai/gpt-4.1-nano \
   --formats markdown_kv markdown_table json csv \
   --limit 200 \
