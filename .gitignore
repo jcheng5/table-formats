@@ -12,3 +12,4 @@ wheels/
 
 # Eval logs
 logs/
+inspect-logs/
